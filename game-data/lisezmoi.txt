@@ -1,0 +1,26 @@
+LISEZMOI.TXT / EUROPEO
+
+---------------------------------------------------------------------------
+SOMMAIRE
+---------------------------------------------------------------------------
+- CONFIGURATION MINIMALE
+- LANCER L�INSTALLATION
+- LES DIFFERENTS TYPES D�INSTALLATIONS 
+- L�INSTALLATION MANUELLE DE Microsoft DirectX 6
+- LANCEMENT MANUEL DE "Europeo"
+- QUESTIONS / REPONSES
+
+
+---------------------------------------------------------------------------
+CONFIGURATION MINIMALE
+---------------------------------------------------------------------------
+La configuration minimale de l'ordinateur pour que fonctionne 
+"Europeo", doit �tre la suivante :
+
+Syst�me d'exploitation :   Windows 95/98 ou ult�rieur
+Processeur :               Pentium 90 MHz
+M�moire :                  16 Mo de m�moire RAM
+CD-Rom. :                  Lecteur de CD-ROM quadruple vitesse
+Carte graphique :          Carte graphique PCI en milliers de couleurs
+Carte sonore :             Carte sonore 16 bits
+Disque dur :               40 Mo d'espace libre
