@@ -1,0 +1,1456 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VN-Studio Demo - Virtual Navigator Renderer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', sans-serif;
+      overflow: hidden;
+      height: 100%;
+      width: 100%;
+      position: fixed;
+      touch-action: none;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Barre du haut */
+    #toolbar {
+      background: #16213e;
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid #0f3460;
+      z-index: 10;
+      flex-shrink: 0;
+    }
+    #toolbar h1 {
+      font-size: 14px;
+      color: #e94560;
+      margin-right: 8px;
+    }
+    #toolbar button, #toolbar select {
+      background: #0f3460;
+      color: #e0e0e0;
+      border: 1px solid #533483;
+      padding: 4px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    #toolbar button:hover { background: #533483; }
+    #toolbar label {
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    #toolbar input[type="checkbox"] { accent-color: #e94560; }
+    #scene-info {
+      margin-left: auto;
+      font-size: 12px;
+      color: #888;
+    }
+
+    /* Zone de rendu - remplit tout l'espace restant */
+    #canvas-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+      position: relative;
+      overflow: hidden;
+    }
+    #game-canvas {
+      image-rendering: auto;
+      cursor: default;
+      touch-action: none;
+    }
+
+    /* Fullscreen */
+    body.fullscreen #toolbar { display: none; }
+    body.fullscreen #canvas-container { height: 100vh; }
+
+    /* Panneau latéral scènes */
+    #scene-list {
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 220px;
+      background: rgba(22, 33, 62, 0.95);
+      overflow-y: auto;
+      font-size: 11px;
+      z-index: 5;
+      border-right: 1px solid #0f3460;
+      display: none;
+    }
+    #scene-list.visible { display: block; }
+    #scene-list .scene-item {
+      padding: 6px 10px;
+      cursor: pointer;
+      border-bottom: 1px solid #0f3460;
+    }
+    #scene-list .scene-item:hover { background: #0f3460; }
+    #scene-list .scene-item.active { background: #533483; color: #fff; }
+    #scene-list .scene-item .scene-name { font-weight: bold; }
+    #scene-list .scene-item .scene-meta { color: #888; font-size: 10px; }
+
+    /* Info tooltip */
+    #tooltip {
+      position: absolute;
+      background: rgba(0,0,0,0.85);
+      color: #fff;
+      padding: 4px 8px;
+      border-radius: 3px;
+      font-size: 11px;
+      pointer-events: none;
+      display: none;
+      z-index: 20;
+      max-width: 300px;
+      font-family: monospace;
+    }
+
+    /* Drop zone */
+    #dropzone {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      background: rgba(26, 26, 46, 0.95);
+    }
+    #dropzone.hidden { display: none; }
+    #dropzone h2 { color: #e94560; margin-bottom: 16px; }
+    #dropzone p { color: #888; margin: 4px 0; font-size: 14px; }
+    #dropzone .drop-area {
+      border: 2px dashed #533483;
+      border-radius: 12px;
+      padding: 40px 60px;
+      text-align: center;
+      cursor: pointer;
+    }
+    #dropzone .drop-area:hover { border-color: #e94560; }
+    #dropzone .drop-area.dragover { background: rgba(83, 52, 131, 0.3); border-color: #e94560; }
+  </style>
+</head>
+<body>
+
+<div id="toolbar">
+  <h1>VN-Studio</h1>
+  <select id="vnd-select"><option value="">-- Charger VND --</option></select>
+  <button id="btn-load">Fichier local</button>
+  <button id="btn-load-res">Ressources locales</button>
+  <button id="btn-scenes">Scènes</button>
+  <button id="btn-prev">&larr;</button>
+  <select id="scene-select"></select>
+  <button id="btn-next">&rarr;</button>
+  <label><input type="checkbox" id="chk-polygons" checked> Polygones</label>
+  <label><input type="checkbox" id="chk-labels" checked> Labels</label>
+  <label><input type="checkbox" id="chk-fill"> Remplir</label>
+  <button id="btn-fullscreen">Plein écran</button>
+  <span id="scene-info"></span>
+</div>
+
+<div id="canvas-container">
+  <canvas id="game-canvas" width="640" height="480"></canvas>
+  <div id="scene-list"></div>
+  <div id="tooltip"></div>
+  <div id="dropzone">
+    <div class="drop-area" id="drop-area">
+      <h2>VN-Studio Demo</h2>
+      <p>Glissez un fichier .vnd ici</p>
+      <p>ou cliquez pour sélectionner</p>
+      <p style="margin-top:16px;font-size:11px;color:#666">
+        Optionnel: glissez aussi un dossier de ressources (BMP, WAV)
+      </p>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="file-input" accept=".vnd" style="display:none">
+<input type="file" id="res-input" webkitdirectory style="display:none">
+
+<script>
+// =============================================================================
+// VND PARSER (inline, exact copy of parse-vnd-universal.js logic)
+// =============================================================================
+
+function readBS(buf, o) {
+  if (o + 4 > buf.byteLength) return null;
+  var view = new DataView(buf);
+  var len = view.getUint32(o, true);
+  if (len === 0) return { s: '', l: 4 };
+  if (len > 100000 || o + 4 + len > buf.byteLength) return null;
+  var bytes = new Uint8Array(buf, o + 4, len);
+  var s = '';
+  for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  return { s: s, l: 4 + len };
+}
+
+function readObject(buf, view, p) {
+  var type = view.getUint32(p, true); p += 4;
+  var bs = readBS(buf, p);
+  var str = bs ? bs.s : '';
+  p += bs ? bs.l : 4;
+  return { type: type, string: str, endPos: p };
+}
+
+function readStringCollection(buf, view, p) {
+  var count = view.getUint32(p, true); p += 4;
+  var items = [];
+  for (var i = 0; i < count; i++) {
+    var subIndex = view.getUint32(p, true); p += 4;
+    var obj = readObject(buf, view, p);
+    items.push({ subIndex: subIndex, type: obj.type, string: obj.string });
+    p = obj.endPos;
+  }
+  return { items: items, endPos: p };
+}
+
+function readCommand(buf, view, p, streamVersion) {
+  var strCol = readStringCollection(buf, view, p);
+  p = strCol.endPos;
+  var commandType = view.getUint32(p, true); p += 4;
+  var paramPairCount = view.getUint32(p, true); p += 4;
+  var paramPairs = [];
+  if (paramPairCount > 0 && paramPairCount < 10000) {
+    for (var i = 0; i < paramPairCount; i++) {
+      var a = view.getInt32(p, true); p += 4;
+      var b = view.getInt32(p, true); p += 4;
+      paramPairs.push({ a: a, b: b });
+    }
+  }
+  var flags = 0;
+  if (streamVersion >= 0x2000c) {
+    flags = view.getUint32(p, true); p += 4;
+  }
+  return { strings: strCol.items, commandType: commandType, paramPairCount: paramPairCount, paramPairs: paramPairs, flags: flags, endPos: p };
+}
+
+function readContentCollection(buf, view, p, sv) {
+  var count = view.getUint32(p, true); p += 4;
+  var cmds = [];
+  for (var i = 0; i < count; i++) {
+    var cmd = readCommand(buf, view, p, sv);
+    cmds.push(cmd); p = cmd.endPos;
+  }
+  return { commands: cmds, endPos: p };
+}
+
+function readScene(buf, view, p, sv) {
+  var nameBS = readBS(buf, p); if (!nameBS) return null; p += nameBS.l;
+  var flagBytes = []; for (var fb = 0; fb < 4; fb++) flagBytes.push(new Uint8Array(buf)[p + fb]); p += 4;
+  var prop1 = view.getUint32(p, true); p += 4;
+  var prop2 = view.getUint32(p, true); p += 4;
+  var prop3 = view.getUint32(p, true); p += 4;
+
+  var s1 = readBS(buf, p); p += s1 ? s1.l : 4;
+  var s2 = readBS(buf, p); p += s2 ? s2.l : 4;
+  var val1 = view.getUint32(p, true); p += 4;
+  var s3 = readBS(buf, p); p += s3 ? s3.l : 4;
+  var val2 = view.getUint32(p, true); p += 4;
+  var s4 = readBS(buf, p); p += s4 ? s4.l : 4;
+  var val3 = view.getUint32(p, true); p += 4;
+  var s5 = readBS(buf, p); p += s5 ? s5.l : 4;
+  var val4 = view.getUint32(p, true); p += 4;
+  var s6 = readBS(buf, p); p += s6 ? s6.l : 4;
+  var val5 = view.getUint32(p, true); p += 4;
+
+  var rect = {
+    left: view.getInt32(p, true), top: view.getInt32(p+4, true),
+    right: view.getInt32(p+8, true), bottom: view.getInt32(p+12, true)
+  }; p += 16;
+
+  view.getUint32(p, true); p += 4; // val6
+
+  var hotspotCount = view.getUint32(p, true); p += 4;
+  var hotspot = null;
+  if (hotspotCount > 0) {
+    var timerValue = view.getUint32(p, true); p += 4;
+    var collCount = view.getUint32(p, true); p += 4;
+    var objects = [];
+    for (var hi = 0; hi < collCount; hi++) {
+      var obj = readObject(buf, view, p);
+      objects.push({ type: obj.type, string: obj.string });
+      p = obj.endPos;
+    }
+    hotspot = { timerValue: timerValue, objects: objects };
+  }
+
+  var cmdListValue = view.getInt32(p, true); p += 4;
+  var cmdListData = [];
+  if (cmdListValue !== 0) {
+    for (var ci = 0; ci < 5; ci++) { cmdListData.push(view.getUint32(p, true)); p += 4; }
+  }
+
+  var contentCol = readContentCollection(buf, view, p, sv);
+  p = contentCol.endPos;
+
+  return {
+    name: nameBS.s, flagBytes: flagBytes, prop1: prop1, prop2: prop2, prop3: prop3,
+    fields: {
+      string1: s1 ? s1.s : '', string2: s2 ? s2.s : '', val1: val1,
+      string3: s3 ? s3.s : '', val2: val2, string4: s4 ? s4.s : '', val3: val3,
+      resource: s5 ? s5.s : '', val4: val4, string6: s6 ? s6.s : '', val5: val5
+    },
+    rect: rect, hotspotCount: hotspotCount, hotspot: hotspot,
+    cmdListValue: cmdListValue, cmdListData: cmdListData,
+    commands: contentCol.commands, endPos: p
+  };
+}
+
+function parseVND(arrayBuffer) {
+  var buf = arrayBuffer;
+  var view = new DataView(buf);
+  var p = 5; // skip stream header
+
+  var magic = readBS(buf, p); p += magic.l;
+  if (magic.s !== 'VNFILE') throw new Error('Invalid magic: ' + magic.s);
+  var version = readBS(buf, p); p += version.l;
+  var sceneCount = view.getUint32(p, true); p += 4;
+  var projectName = readBS(buf, p); p += projectName.l;
+  var editor = readBS(buf, p); p += editor.l;
+  var serial = readBS(buf, p); p += serial.l;
+  var projectIDStr = readBS(buf, p); p += projectIDStr.l;
+  var registry = readBS(buf, p); p += registry.l;
+  var width = view.getUint32(p, true); p += 4;
+  var height = view.getUint32(p, true); p += 4;
+  var depth = view.getUint32(p, true); p += 4;
+  var flag = view.getUint32(p, true); p += 4;
+  var u1 = view.getUint32(p, true); p += 4;
+  var u2 = view.getUint32(p, true); p += 4;
+  var reserved = view.getUint32(p, true); p += 4;
+  var dllPath = readBS(buf, p); p += dllPath.l;
+  var varCount = view.getUint32(p, true); p += 4;
+
+  var vars = [];
+  for (var vi = 0; vi < varCount; vi++) {
+    var vname = readBS(buf, p); p += vname.l;
+    var vval = view.getUint32(p, true); p += 4;
+    vars.push({ name: vname.s, value: vval });
+  }
+
+  var vp = version.s.split('.');
+  var sv = (parseInt(vp[0]) << 16) | parseInt(vp[1] || '0');
+
+  var scenes = [];
+  for (var si = 0; si < sceneCount; si++) {
+    var scene = readScene(buf, view, p, sv);
+    if (!scene) break;
+    scenes.push(scene); p = scene.endPos;
+  }
+
+  return {
+    header: {
+      magic: magic.s, version: version.s, sceneCount: sceneCount,
+      projectName: projectName.s, editor: editor.s,
+      width: width, height: height, depth: depth
+    },
+    variables: vars, scenes: scenes,
+    bytesRemaining: buf.byteLength - p
+  };
+}
+
+// =============================================================================
+// COMMANDE TYPES
+// =============================================================================
+
+var CMD_NAMES = {
+  0:'QUIT', 1:'ABOUT', 2:'PREFS', 3:'PREV', 4:'NEXT', 5:'ZOOM',
+  6:'SCENE', 7:'HOTSPOT', 8:'TIPTEXT', 9:'PLAYAVI', 10:'PLAYBMP',
+  11:'PLAYWAV', 12:'PLAYMID', 13:'PLAYHTML', 14:'ZOOMIN', 15:'ZOOMOUT',
+  16:'PAUSE', 17:'EXEC', 18:'EXPLORE', 19:'PLAYCDA', 20:'PLAYSEQ',
+  21:'IF', 22:'SET_VAR', 23:'INC_VAR', 24:'DEC_VAR', 25:'INVALIDATE',
+  26:'DEFCURSOR', 27:'ADDBMP', 28:'DELBMP', 29:'SHOWBMP', 30:'HIDEBMP',
+  31:'RUNPRJ', 32:'UPDATE', 33:'RUNDLL', 34:'MSGBOX', 35:'PLAYCMD',
+  36:'CLOSEWAV', 37:'CLOSEDLL', 38:'PLAYTEXT', 39:'FONT', 40:'REM',
+  41:'ADDTEXT', 42:'DELOBJ', 43:'SHOWOBJ', 44:'HIDEOBJ',
+  45:'LOAD', 46:'SAVE', 47:'CLOSEAVI', 48:'CLOSEMID', 105:'POLYGON'
+};
+
+// Convertir 2 paires (rect top-left/bottom-right) en 4 coins
+function expandRect(pairs) {
+  if (pairs.length === 2) {
+    return [
+      { a: pairs[0].a, b: pairs[0].b },
+      { a: pairs[1].a, b: pairs[0].b },
+      { a: pairs[1].a, b: pairs[1].b },
+      { a: pairs[0].a, b: pairs[1].b }
+    ];
+  }
+  return pairs;
+}
+
+// Couleurs de polygones par type de commande
+var POLY_COLORS = {
+  100: 'rgba(255,100,100,0.4)',
+  101: 'rgba(100,255,100,0.4)',
+  103: 'rgba(255,255,100,0.4)',
+  105: 'rgba(100,150,255,0.4)',
+  106: 'rgba(255,150,100,0.4)',
+  107: 'rgba(150,100,255,0.4)',
+  108: 'rgba(100,255,200,0.4)',
+};
+var POLY_STROKE = {
+  100: '#ff6464',
+  101: '#64ff64',
+  103: '#ffff64',
+  105: '#6496ff',
+  106: '#ff9664',
+  107: '#9664ff',
+  108: '#64ffc8',
+};
+
+// =============================================================================
+// APP STATE
+// =============================================================================
+
+var project = null;
+var currentSceneIndex = -1;
+var resources = {}; // path -> Image
+var showPolygons = true;
+var showLabels = true;
+var fillPolygons = false;
+var hoveredCmd = null;
+var scrollX = 0; // offset de scroll horizontal pour scènes larges
+
+var canvas = document.getElementById('game-canvas');
+var ctx = canvas.getContext('2d');
+var container = document.getElementById('canvas-container');
+
+// =============================================================================
+// CANVAS SCALING (640x480 interne, CSS plein conteneur)
+// =============================================================================
+
+// Calculer la largeur réelle d'une scène (max X des polygones ou header)
+function getSceneWidth(scene) {
+  var w = project ? project.header.width : 640;
+  if (!scene) return w;
+  // Utiliser la largeur de l'image de fond si chargée
+  var resKey = scene.fields.resource ? scene.fields.resource.toLowerCase().replace(/\\/g, '/') : '';
+  if (resources[resKey] && resources[resKey].naturalWidth > w) {
+    w = resources[resKey].naturalWidth;
+  }
+  // Fallback: max X des polygones
+  scene.commands.forEach(function(cmd) {
+    cmd.paramPairs.forEach(function(p) {
+      if (p.a > w) w = p.a + 1;
+    });
+  });
+  return w;
+}
+
+function resizeCanvas() {
+  var cw = container.clientWidth;
+  var ch = container.clientHeight;
+  var gameW = project ? project.header.width : 640;
+  var gameH = project ? project.header.height : 480;
+  canvas.width = gameW;
+  canvas.height = gameH;
+  var scale = Math.min(cw / gameW, ch / gameH);
+  var dispW = Math.floor(gameW * scale);
+  var dispH = Math.floor(gameH * scale);
+  canvas.style.width = dispW + 'px';
+  canvas.style.height = dispH + 'px';
+
+  render();
+}
+
+window.addEventListener('resize', resizeCanvas);
+
+// Convertir coordonnées écran -> coordonnées jeu
+function screenToGame(clientX, clientY) {
+  var rect = canvas.getBoundingClientRect();
+  var gameW = project ? project.header.width : 640;
+  var gameH = project ? project.header.height : 480;
+  var scaleX = gameW / rect.width;
+  var scaleY = gameH / rect.height;
+  return {
+    x: (clientX - rect.left) * scaleX + scrollX,
+    y: (clientY - rect.top) * scaleY
+  };
+}
+
+// =============================================================================
+// RENDU
+// =============================================================================
+
+function render() {
+  if (!project || currentSceneIndex < 0) return;
+  var scene = project.scenes[currentSceneIndex];
+  var w = project.header.width;
+  var h = project.header.height;
+  var sceneW = getSceneWidth(scene);
+
+  // Limiter le scroll
+  var maxScroll = Math.max(0, sceneW - w);
+  if (scrollX > maxScroll) scrollX = maxScroll;
+  if (scrollX < 0) scrollX = 0;
+
+  // Fond
+  ctx.fillStyle = '#2a2a4a';
+  ctx.fillRect(0, 0, w, h);
+
+  // Appliquer le scroll
+  ctx.save();
+  ctx.translate(-scrollX, 0);
+
+  // Image de fond si disponible
+  var resKey = scene.fields.resource.toLowerCase().replace(/\\/g, '/');
+  if (resources[resKey]) {
+    ctx.drawImage(resources[resKey], 0, 0);
+  } else if (scene.fields.resource) {
+    // Fond placeholder avec nom de ressource
+    ctx.fillStyle = '#1a1a3a';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#444';
+    ctx.font = '14px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('Resource: ' + scene.fields.resource, w/2, h/2);
+    ctx.textAlign = 'start';
+  }
+
+  // Polygones
+  if (showPolygons) {
+    scene.commands.forEach(function(cmd, idx) {
+      if (cmd.paramPairs.length < 2) return;
+      var pts = expandRect(cmd.paramPairs);
+      var color = POLY_COLORS[cmd.commandType] || 'rgba(200,200,200,0.3)';
+      var stroke = POLY_STROKE[cmd.commandType] || '#ccc';
+
+      ctx.beginPath();
+      ctx.moveTo(pts[0].a, pts[0].b);
+      for (var i = 1; i < pts.length; i++) {
+        ctx.lineTo(pts[i].a, pts[i].b);
+      }
+      ctx.closePath();
+
+      if (fillPolygons || cmd === hoveredCmd) {
+        ctx.fillStyle = cmd === hoveredCmd ? 'rgba(255,255,255,0.3)' : color;
+        ctx.fill();
+      }
+
+      ctx.strokeStyle = cmd === hoveredCmd ? '#fff' : stroke;
+      ctx.lineWidth = cmd === hoveredCmd ? 2.5 : 1.5;
+      ctx.stroke();
+
+      // Labels
+      if (showLabels) {
+        var cx = 0, cy = 0;
+        pts.forEach(function(p) { cx += p.a; cy += p.b; });
+        cx /= pts.length;
+        cy /= pts.length;
+
+        var label = CMD_NAMES[cmd.commandType] || ('CMD_' + cmd.commandType);
+        // Extraire la cible scène si string type 6
+        var sceneStr = cmd.strings.find(function(s) { return s.type === 6; });
+        if (sceneStr) {
+          var si = parseInt(sceneStr.string, 10);
+          if (!isNaN(si) && project && si >= 1 && (si - 1) < project.scenes.length && project.scenes[si - 1].name) {
+            label = si + ': ' + project.scenes[si - 1].name;
+          } else {
+            label = sceneStr.string;
+          }
+        }
+
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        var tw = ctx.measureText(label).width;
+        ctx.fillRect(cx - tw/2 - 2, cy - 6, tw + 4, 14);
+        ctx.fillStyle = '#fff';
+        ctx.fillText(label, cx, cy + 4);
+        ctx.textAlign = 'start';
+      }
+    });
+  }
+
+  // PLAYTEXT overlay pour la commande survolée
+  if (hoveredCmd) {
+    var textStr = hoveredCmd.strings.find(function(s) { return s.type === 38; });
+    var fontStr = hoveredCmd.strings.find(function(s) { return s.type === 39; });
+    if (textStr && textStr.string) {
+      // Format type 38: "x y width height flags text"
+      var tp = textStr.string.match(/^(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+\d+\s+(.+)$/);
+      if (tp) {
+        var tx = parseInt(tp[1]), ty = parseInt(tp[2]);
+        var tw = parseInt(tp[3]) - tx, th = parseInt(tp[4]) - ty;
+        var text = tp[5];
+
+        // Font: "size flags color fontname"
+        var fontSize = 14, fontColor = '#ffffff', fontName = 'Comic Sans MS';
+        if (fontStr && fontStr.string) {
+          var fp = fontStr.string.match(/^(\d+)\s+\d+\s+(#[0-9a-fA-F]+)\s+(.+)$/);
+          if (fp) {
+            fontSize = parseInt(fp[1]);
+            fontColor = fp[2];
+            fontName = fp[3];
+          }
+        }
+
+        // Background
+        ctx.fillStyle = 'rgba(0,0,0,0.75)';
+        ctx.fillRect(tx, ty, tw > 0 ? tw : 300, th > 0 ? th : fontSize + 8);
+
+        // Text
+        ctx.font = fontSize + 'px "' + fontName + '", sans-serif';
+        ctx.fillStyle = fontColor;
+        ctx.textAlign = 'start';
+        ctx.fillText(text, tx + 4, ty + fontSize + 2);
+      }
+    }
+  }
+
+  ctx.restore(); // fin du scroll
+
+  // Info scène (fixe, pas scrollée)
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(0, 0, w, 22);
+  ctx.font = '12px monospace';
+  ctx.fillStyle = '#e94560';
+  ctx.fillText('Scene ' + (currentSceneIndex + 1) + '/' + project.scenes.length + ': "' + scene.name + '"', 8, 15);
+  var info = scene.commands.length + ' cmds, ' + scene.commands.filter(function(c) { return c.paramPairs.length > 0; }).length + ' polys';
+  if (scene.hotspot) info += ', hotspot timer=' + scene.hotspot.timerValue;
+  ctx.fillStyle = '#888';
+  ctx.fillText(info, w - ctx.measureText(info).width - 8, 15);
+
+  // Barre de scroll horizontale si scène plus large que la fenêtre
+  if (sceneW > w) {
+    var barY = h - 6;
+    var barH = 4;
+    var viewRatio = w / sceneW;
+    var barW = Math.max(20, w * viewRatio);
+    var barX = (scrollX / (sceneW - w)) * (w - barW);
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    ctx.fillRect(0, barY, w, barH);
+    ctx.fillStyle = 'rgba(233,69,96,0.7)';
+    ctx.fillRect(barX, barY, barW, barH);
+  }
+}
+
+// =============================================================================
+// COMMAND EXECUTION ENGINE
+// =============================================================================
+
+// --- AUDIO ---
+var audioElements = {}; // key -> HTMLAudioElement
+
+function resolveWavPath(wavRef) {
+  var normalized = wavRef.toLowerCase().replace(/\\/g, '/');
+  var wavDir = 'digit/'; // default
+  if (currentVNPConfig) {
+    var dir = currentVNPConfig['WAV'] || '';
+    wavDir = dir.replace(/\\/g, '/');
+    if (wavDir && !wavDir.endsWith('/')) wavDir += '/';
+  }
+  return '/game-data/' + currentBasePath + wavDir + normalized;
+}
+
+function playWav(wavStr) {
+  // Format: "filename loop_count" ex: "music.wav 2"
+  var parts = wavStr.trim().split(/\s+/);
+  var file = parts[0];
+  var loops = parseInt(parts[1]) || 1;
+  var url = resolveWavPath(file);
+  var key = file.toLowerCase();
+
+  // Stopper si déjà en cours
+  if (audioElements[key]) {
+    audioElements[key].pause();
+    audioElements[key].currentTime = 0;
+  }
+
+  var audio = new Audio(url);
+  audio.loop = (loops > 1 || loops === 0); // 0 = infinite
+  audioElements[key] = audio;
+  audio.play().catch(function(e) { console.warn('Audio play failed:', url, e.message); });
+  console.log('PLAYWAV:', file, 'loops:', loops);
+}
+
+function stopAllAudio() {
+  Object.keys(audioElements).forEach(function(key) {
+    audioElements[key].pause();
+    audioElements[key].currentTime = 0;
+  });
+}
+
+// --- RUNPRJ ---
+// Map VNP path to VND_LIST entry
+// Input: "..\france\france.vnp 18" -> { entry, sceneIndex }
+function parseRunPrj(runPrjStr) {
+  var parts = runPrjStr.trim().split(/\s+/);
+  var vnpPath = parts[0].toLowerCase().replace(/\\/g, '/');
+  var sceneIdx = parseInt(parts[1]) || 1;
+
+  // Extract folder/name from path like "../france/france.vnp"
+  var match = vnpPath.match(/([^/]+)\/([^/]+)\.vnp$/);
+  if (!match) return null;
+
+  var folder = match[1];
+  var name = match[2];
+
+  // Find in VND_LIST
+  var entry = VND_LIST.find(function(e) {
+    return e.base.replace(/\/$/, '').toLowerCase() === folder ||
+           e.vnd.toLowerCase().indexOf(name + '.vnd') >= 0;
+  });
+
+  return entry ? { entry: entry, sceneIndex: sceneIdx } : null;
+}
+
+function executeRunPrj(runPrjStr) {
+  var parsed = parseRunPrj(runPrjStr);
+  if (!parsed) {
+    console.warn('RUNPRJ: cannot resolve', runPrjStr);
+    return;
+  }
+  console.log('RUNPRJ:', parsed.entry.name, 'scene', parsed.sceneIndex);
+  stopAllAudio();
+
+  // Load VNP config first
+  currentBasePath = parsed.entry.base;
+  fetch('/game-data/' + parsed.entry.vnp).then(function(r) { return r.text(); }).then(function(text) {
+    currentVNPConfig = parseVNP(text);
+  }).catch(function() { currentVNPConfig = null; });
+
+  // Load VND then go to scene
+  var targetScene = parsed.sceneIndex;
+  fetch('/game-data/' + parsed.entry.vnd).then(function(r) {
+    return r.arrayBuffer();
+  }).then(function(buf) {
+    loadVNDFile(buf, parsed.entry.vnd);
+    // Scene index is 1-based
+    if (targetScene >= 1 && (targetScene - 1) < project.scenes.length) {
+      goToScene(targetScene - 1);
+    }
+    // Update VND selector
+    var vndIdx = VND_LIST.indexOf(parsed.entry);
+    if (vndIdx >= 0) document.getElementById('vnd-select').value = vndIdx;
+  }).catch(function(e) {
+    console.error('RUNPRJ load failed:', e);
+  });
+}
+
+// --- VARIABLES ---
+var gameVars = {}; // variable store: { name: value }
+
+function getVar(name) {
+  return gameVars[name.toLowerCase()] || 0;
+}
+
+function setVar(name, val) {
+  gameVars[name.toLowerCase()] = val;
+  console.log('SET_VAR:', name, '=', val);
+}
+
+// --- IF EVALUATOR ---
+// Format: "variable op value then action [else action]"
+// Actions: "runprj path sceneIdx", "scene idx", "dec_var name val", "inc_var name val",
+//          "playavi path flags", "set_var name val"
+function evaluateIf(ifStr) {
+  // Split on " then " to get condition and actions
+  var thenIdx = ifStr.indexOf(' then ');
+  if (thenIdx < 0) return null;
+
+  var condStr = ifStr.substring(0, thenIdx).trim();
+  var rest = ifStr.substring(thenIdx + 6).trim();
+
+  // Parse condition: "variable op value"
+  var condMatch = condStr.match(/^(\S+)\s*(>=|<=|!=|<>|=|<|>)\s*(-?\d+)$/);
+  if (!condMatch) return null;
+
+  var varName = condMatch[1];
+  var op = condMatch[2];
+  var val = parseInt(condMatch[3]);
+  var actual = getVar(varName);
+
+  var result = false;
+  switch (op) {
+    case '=': result = (actual === val); break;
+    case '<': result = (actual < val); break;
+    case '>': result = (actual > val); break;
+    case '>=': result = (actual >= val); break;
+    case '<=': result = (actual <= val); break;
+    case '!=': case '<>': result = (actual !== val); break;
+  }
+
+  // Split on " else " — careful: "else" can appear in action strings
+  // Look for " else " that's followed by a known command keyword
+  var elseIdx = -1;
+  var elseMatch = rest.match(/\s+else\s+(runprj|scene|dec_var|inc_var|set_var|playavi|playwav|playbmp)\s/i);
+  if (elseMatch) {
+    elseIdx = rest.indexOf(elseMatch[0]);
+  } else {
+    // Try simple " else " split
+    var simpleElse = rest.indexOf(' else ');
+    if (simpleElse >= 0) elseIdx = simpleElse;
+  }
+
+  var thenAction, elseAction;
+  if (elseIdx >= 0) {
+    thenAction = rest.substring(0, elseIdx).trim();
+    elseAction = rest.substring(elseIdx + 6).trim();
+  } else {
+    thenAction = rest.trim();
+    elseAction = null;
+  }
+
+  console.log('IF:', varName, op, val, '(actual=' + actual + ') →', result ? 'THEN' : 'ELSE');
+  return result ? thenAction : elseAction;
+}
+
+// Execute an action string (from IF then/else branch)
+function executeAction(action) {
+  if (!action) return;
+  var parts = action.trim().split(/\s+/);
+  var cmd = parts[0].toLowerCase();
+
+  if (cmd === 'runprj') {
+    executeRunPrj(parts.slice(1).join(' '));
+  } else if (cmd === 'scene') {
+    var idx = parseInt(parts[1]);
+    if (!isNaN(idx) && idx >= 1 && (idx - 1) < project.scenes.length) {
+      goToScene(idx - 1);
+    }
+  } else if (cmd === 'set_var') {
+    setVar(parts[1], parseInt(parts[2]) || 0);
+  } else if (cmd === 'inc_var') {
+    setVar(parts[1], getVar(parts[1]) + (parseInt(parts[2]) || 1));
+  } else if (cmd === 'dec_var') {
+    setVar(parts[1], getVar(parts[1]) - (parseInt(parts[2]) || 1));
+  } else {
+    console.log('Unhandled action:', action);
+  }
+}
+
+// --- SCENE COMMANDS ---
+// Exécuter les commandes non-interactives d'une scène (au chargement)
+function executeSceneCommands(scene) {
+  scene.commands.forEach(function(cmd) {
+    // PLAYWAV (type 11 in strings)
+    var wavStr = cmd.strings.find(function(s) { return s.type === 11; });
+    if (wavStr && wavStr.string) {
+      playWav(wavStr.string);
+    }
+    // SET_VAR (type 22): "name value"
+    var setStr = cmd.strings.find(function(s) { return s.type === 22; });
+    if (setStr && setStr.string) {
+      var sp = setStr.string.trim().split(/\s+/);
+      if (sp.length >= 2) setVar(sp[0], parseInt(sp[1]) || 0);
+    }
+    // INC_VAR (type 23): "name value"
+    var incStr = cmd.strings.find(function(s) { return s.type === 23; });
+    if (incStr && incStr.string) {
+      var ip = incStr.string.trim().split(/\s+/);
+      if (ip.length >= 2) setVar(ip[0], getVar(ip[0]) + (parseInt(ip[1]) || 1));
+    }
+    // DEC_VAR (type 24): "name value"
+    var decStr = cmd.strings.find(function(s) { return s.type === 24; });
+    if (decStr && decStr.string) {
+      var dp = decStr.string.trim().split(/\s+/);
+      if (dp.length >= 2) setVar(dp[0], getVar(dp[0]) - (parseInt(dp[1]) || 1));
+    }
+  });
+  // Init variables from VND header
+  if (project && project.variables) {
+    project.variables.forEach(function(v) {
+      if (gameVars[v.name.toLowerCase()] === undefined) {
+        gameVars[v.name.toLowerCase()] = v.value;
+      }
+    });
+  }
+}
+
+// =============================================================================
+// HIT TESTING
+// =============================================================================
+
+function pointInPolygon(x, y, pairs) {
+  if (pairs.length < 3) return false;
+  var inside = false;
+  for (var i = 0, j = pairs.length - 1; i < pairs.length; j = i++) {
+    var xi = pairs[i].a, yi = pairs[i].b;
+    var xj = pairs[j].a, yj = pairs[j].b;
+    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function findCommandAtPoint(x, y) {
+  if (!project || currentSceneIndex < 0) return null;
+  var scene = project.scenes[currentSceneIndex];
+  for (var i = scene.commands.length - 1; i >= 0; i--) {
+    var cmd = scene.commands[i];
+    if (cmd.paramPairs.length >= 2 && pointInPolygon(x, y, expandRect(cmd.paramPairs))) {
+      return cmd;
+    }
+  }
+  return null;
+}
+
+// Pour le clic : priorité aux commandes navigables (avec string type 6)
+// Un rollover plein écran ne doit pas bloquer un polygone de navigation en dessous
+function findClickableCommandAtPoint(x, y) {
+  if (!project || currentSceneIndex < 0) return null;
+  var scene = project.scenes[currentSceneIndex];
+  var navigable = null;
+  var fallback = null;
+  for (var i = scene.commands.length - 1; i >= 0; i--) {
+    var cmd = scene.commands[i];
+    if (cmd.paramPairs.length >= 2 && pointInPolygon(x, y, expandRect(cmd.paramPairs))) {
+      var hasScene = cmd.strings.some(function(s) { return s.type === 6; });
+      if (hasScene && !navigable) {
+        navigable = cmd;
+      }
+      if (!fallback) {
+        fallback = cmd;
+      }
+    }
+  }
+  return navigable || fallback;
+}
+
+// =============================================================================
+// INTERACTIONS
+// =============================================================================
+
+canvas.addEventListener('mousemove', function(e) {
+  var pos = screenToGame(e.clientX, e.clientY);
+  var cmd = findCommandAtPoint(pos.x, pos.y);
+
+  if (cmd !== hoveredCmd) {
+    hoveredCmd = cmd;
+    canvas.style.cursor = cmd ? 'pointer' : 'default';
+    render();
+  }
+
+  // Tooltip
+  var tooltip = document.getElementById('tooltip');
+  if (cmd) {
+    var lines = [CMD_NAMES[cmd.commandType] || 'CMD_' + cmd.commandType];
+    cmd.strings.forEach(function(s) {
+      lines.push('  [' + s.type + '] ' + s.string);
+    });
+    if (cmd.flags) lines.push('  flags=' + cmd.flags);
+    tooltip.textContent = lines.join('\n');
+    tooltip.style.whiteSpace = 'pre';
+    tooltip.style.display = 'block';
+    tooltip.style.left = (e.clientX + 12) + 'px';
+    tooltip.style.top = (e.clientY + 12) + 'px';
+  } else {
+    tooltip.style.display = 'none';
+  }
+});
+
+// Action commune clic / tap
+function handleCommandClick(cmd) {
+  console.log('Clicked:', CMD_NAMES[cmd.commandType], cmd.strings);
+
+  // IF condition (type 21) — évaluer d'abord car peut contenir runprj/scene
+  var ifStr = cmd.strings.find(function(s) { return s.type === 21; });
+  if (ifStr && ifStr.string) {
+    var action = evaluateIf(ifStr.string);
+    if (action) {
+      executeAction(action);
+      return;
+    }
+    // Si IF évalué à null (pas de else), continuer avec les autres actions
+  }
+
+  // SCENE (type 6)
+  var sceneStr = cmd.strings.find(function(s) { return s.type === 6; });
+  if (sceneStr && sceneStr.string) {
+    var idx = parseInt(sceneStr.string, 10);
+    if (!isNaN(idx) && idx >= 1 && (idx - 1) < project.scenes.length) {
+      goToScene(idx - 1);
+      return;
+    }
+    var targetScene = project.scenes.findIndex(function(s) {
+      return s.name.toLowerCase() === sceneStr.string.toLowerCase();
+    });
+    if (targetScene >= 0) {
+      goToScene(targetScene);
+      return;
+    }
+  }
+
+  // RUNPRJ direct (type 31)
+  var runPrj = cmd.strings.find(function(s) { return s.type === 31; });
+  if (runPrj && runPrj.string) {
+    executeRunPrj(runPrj.string);
+    return;
+  }
+
+  // PLAYWAV au clic (type 11)
+  var wavStr = cmd.strings.find(function(s) { return s.type === 11; });
+  if (wavStr && wavStr.string) {
+    playWav(wavStr.string);
+  }
+}
+
+canvas.addEventListener('click', function(e) {
+  var pos = screenToGame(e.clientX, e.clientY);
+  var cmd = findClickableCommandAtPoint(pos.x, pos.y);
+  if (!cmd) return;
+  handleCommandClick(cmd);
+});
+
+// =============================================================================
+// NAVIGATION
+// =============================================================================
+
+function goToScene(index) {
+  if (!project || index < 0 || index >= project.scenes.length) return;
+  currentSceneIndex = index;
+  scrollX = 0;
+  stopAllAudio();
+  loadSceneBackground(project.scenes[index]);
+  executeSceneCommands(project.scenes[index]);
+  updateUI();
+  resizeCanvas();
+}
+
+function updateUI() {
+  if (!project) return;
+  var scene = project.scenes[currentSceneIndex];
+  var select = document.getElementById('scene-select');
+  select.value = currentSceneIndex;
+
+  document.getElementById('scene-info').textContent =
+    project.header.projectName + ' - ' + project.header.width + 'x' + project.header.height;
+
+  // Scene list
+  var items = document.querySelectorAll('#scene-list .scene-item');
+  items.forEach(function(el, i) {
+    el.classList.toggle('active', i === currentSceneIndex);
+  });
+}
+
+// =============================================================================
+// CHARGEMENT VND
+// =============================================================================
+
+function loadVNDFile(arrayBuffer, fileName) {
+  try {
+    project = parseVND(arrayBuffer);
+    console.log('Loaded:', project.header.projectName, project.scenes.length, 'scenes', project.bytesRemaining, 'bytes remaining');
+
+    // Init variables from VND header
+    if (project.variables) {
+      project.variables.forEach(function(v) {
+        gameVars[v.name.toLowerCase()] = v.value;
+      });
+      console.log('Variables:', JSON.stringify(gameVars));
+    }
+
+    // Setup canvas internal size
+    canvas.width = project.header.width;
+    canvas.height = project.header.height;
+    resizeCanvas();
+
+    // Scene select
+    var select = document.getElementById('scene-select');
+    select.innerHTML = '';
+    project.scenes.forEach(function(s, i) {
+      var opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = (i + 1) + ': ' + (s.name || '(vide)');
+      select.appendChild(opt);
+    });
+
+    // Scene list
+    var list = document.getElementById('scene-list');
+    list.innerHTML = '';
+    project.scenes.forEach(function(s, i) {
+      var div = document.createElement('div');
+      div.className = 'scene-item';
+      var cmdCount = s.commands.length;
+      var polyCount = s.commands.filter(function(c) { return c.paramPairs.length > 0; }).length;
+      div.innerHTML = '<div class="scene-name">' + (i + 1) + ': ' + (s.name || '(vide)') + '</div>' +
+        '<div class="scene-meta">' + cmdCount + ' cmds, ' + polyCount + ' polys' +
+        (s.fields.resource ? ', res: ' + s.fields.resource : '') +
+        (s.hotspot ? ', hotspot t=' + s.hotspot.timerValue : '') + '</div>';
+      div.onclick = function() { goToScene(i); };
+      list.appendChild(div);
+    });
+
+    // Cacher la dropzone
+    document.getElementById('dropzone').classList.add('hidden');
+
+    // Aller à la première scène
+    goToScene(0);
+
+  } catch (e) {
+    alert('Erreur de chargement: ' + e.message);
+    console.error(e);
+  }
+}
+
+// =============================================================================
+// CHARGEMENT RESSOURCES
+// =============================================================================
+
+function loadResourceFiles(fileList) {
+  Array.from(fileList).forEach(function(file) {
+    var name = file.name.toLowerCase();
+    if (!name.endsWith('.bmp') && !name.endsWith('.jpg') && !name.endsWith('.png')) return;
+
+    var path = (file.webkitRelativePath || file.name).toLowerCase().replace(/\\/g, '/');
+    // Garder le chemin relatif (ex: "interface/jeu.bmp")
+    var parts = path.split('/');
+    // Stocker sous différentes clés pour maximiser les chances de match
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var img = new Image();
+      img.onload = function() {
+        // Clé = nom du fichier
+        resources[name] = img;
+        // Clé = chemin relatif depuis le dernier dossier connu
+        for (var i = 0; i < parts.length; i++) {
+          resources[parts.slice(i).join('/')] = img;
+        }
+        console.log('Loaded resource:', path);
+        render(); // Re-render si on est déjà sur une scène
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// =============================================================================
+// SERVER-BASED LOADING
+// =============================================================================
+
+// Liste des VND disponibles sur le serveur
+var VND_LIST = [
+  { name: 'couleurs1', vnd: 'couleurs1/couleurs1.vnd', vnp: 'couleurs1/couleurs1.vnp', base: 'couleurs1/' },
+  { name: 'start', vnd: 'frontal/start.vnd', vnp: 'frontal/start.vnp', base: 'frontal/' },
+  { name: 'barre', vnd: 'barre/barre.vnd', vnp: 'barre/barre.vnp', base: 'barre/' },
+  { name: 'allem', vnd: 'allem/allem.vnd', vnp: 'allem/allem.vnp', base: 'allem/' },
+  { name: 'angleterre', vnd: 'angl/angleterre.vnd', vnp: 'angl/angleterre.vnp', base: 'angl/' },
+  { name: 'autriche', vnd: 'autr/autr.vnd', vnp: 'autr/autr.vnp', base: 'autr/' },
+  { name: 'belgique', vnd: 'belge/belge.vnd', vnp: 'belge/belge.vnp', base: 'belge/' },
+  { name: 'biblio', vnd: 'biblio/biblio.vnd', vnp: 'biblio/biblio.vnp', base: 'biblio/' },
+  { name: 'danemark', vnd: 'danem/danem.vnd', vnp: 'danem/danem.vnp', base: 'danem/' },
+  { name: 'ecosse', vnd: 'ecosse/ecosse.vnd', vnp: 'ecosse/ecosse.vnp', base: 'ecosse/' },
+  { name: 'espagne', vnd: 'espa/espa.vnd', vnp: 'espa/espa.vnp', base: 'espa/' },
+  { name: 'finlande', vnd: 'finlan/finlan.vnd', vnp: 'finlan/finlan.vnp', base: 'finlan/' },
+  { name: 'france', vnd: 'france/france.vnd', vnp: 'france/france.vnp', base: 'france/' },
+  { name: 'grece', vnd: 'grece/grece.vnd', vnp: 'grece/grece.vnp', base: 'grece/' },
+  { name: 'hollande', vnd: 'holl/holl.vnd', vnp: 'holl/holl.vnp', base: 'holl/' },
+  { name: 'irlande', vnd: 'irland/irland.vnd', vnp: 'irland/irland.vnp', base: 'irland/' },
+  { name: 'italie', vnd: 'italie/italie.vnd', vnp: 'italie/italie.vnp', base: 'italie/' },
+  { name: 'portugal', vnd: 'portu/portu.vnd', vnp: 'portu/portu.vnp', base: 'portu/' },
+  { name: 'suede', vnd: 'suede/suede.vnd', vnp: 'suede/suede.vnp', base: 'suede/' },
+];
+
+var currentVNPConfig = null; // parsed VNP config
+var currentBasePath = ''; // ex: 'couleurs1/'
+
+// Populer le select VND
+var vndSelect = document.getElementById('vnd-select');
+VND_LIST.forEach(function(entry, i) {
+  var opt = document.createElement('option');
+  opt.value = i;
+  opt.textContent = entry.name;
+  vndSelect.appendChild(opt);
+});
+
+// Charger un VND depuis le serveur
+function loadFromServer(entry) {
+  stopAllAudio();
+  currentBasePath = entry.base;
+  // Charger le VNP d'abord pour les paths
+  fetch('/game-data/' + entry.vnp).then(function(r) { return r.text(); }).then(function(text) {
+    currentVNPConfig = parseVNP(text);
+    console.log('VNP config:', currentVNPConfig);
+  }).catch(function() { currentVNPConfig = null; });
+
+  // Charger le VND
+  fetch('/game-data/' + entry.vnd).then(function(r) {
+    return r.arrayBuffer();
+  }).then(function(buf) {
+    loadVNDFile(buf, entry.vnd);
+  }).catch(function(e) {
+    alert('Erreur chargement: ' + e.message);
+  });
+}
+
+// Parser un VNP (format INI simple)
+function parseVNP(text) {
+  var config = {};
+  text.split('\n').forEach(function(line) {
+    line = line.trim();
+    if (!line || line.startsWith('[') || line.startsWith(';')) return;
+    var eq = line.indexOf('=');
+    if (eq < 0) return;
+    config[line.substring(0, eq).trim().toUpperCase()] = line.substring(eq + 1).trim();
+  });
+  return config;
+}
+
+// Résoudre le chemin d'une ressource BMP
+// VND ref: "euroland\bureaubanquier.bmp" -> /game-data/couleurs1/img24/euroland/bureaubanquier.bmp
+function resolveResourcePath(resRef) {
+  var normalized = resRef.toLowerCase().replace(/\\/g, '/');
+  var imgDir = 'img24/'; // default
+  if (currentVNPConfig) {
+    var dir = currentVNPConfig['IMG24'] || currentVNPConfig['IMG8'] || '';
+    imgDir = dir.replace(/\\/g, '/');
+    if (imgDir && !imgDir.endsWith('/')) imgDir += '/';
+  }
+  return '/game-data/' + currentBasePath + imgDir + normalized;
+}
+
+// Charger automatiquement l'image de fond d'une scène
+function loadSceneBackground(scene) {
+  if (!scene.fields.resource) return;
+  var resKey = scene.fields.resource.toLowerCase().replace(/\\/g, '/');
+  if (resources[resKey]) return; // déjà chargé
+
+  var url = resolveResourcePath(scene.fields.resource);
+  var img = new Image();
+  img.onload = function() {
+    resources[resKey] = img;
+    console.log('Loaded BMP:', resKey, img.width + 'x' + img.height);
+    render();
+  };
+  img.onerror = function() {
+    console.warn('Failed to load:', url);
+  };
+  img.src = url;
+}
+
+vndSelect.onchange = function() {
+  var idx = parseInt(vndSelect.value);
+  if (!isNaN(idx) && VND_LIST[idx]) {
+    loadFromServer(VND_LIST[idx]);
+  }
+};
+
+// =============================================================================
+// EVENT HANDLERS
+// =============================================================================
+
+// File input
+document.getElementById('file-input').addEventListener('change', function(e) {
+  if (e.target.files.length > 0) {
+    var file = e.target.files[0];
+    var reader = new FileReader();
+    reader.onload = function(ev) { loadVNDFile(ev.target.result, file.name); };
+    reader.readAsArrayBuffer(file);
+  }
+});
+
+document.getElementById('res-input').addEventListener('change', function(e) {
+  if (e.target.files.length > 0) loadResourceFiles(e.target.files);
+});
+
+// Buttons
+document.getElementById('btn-load').onclick = function() { document.getElementById('file-input').click(); };
+document.getElementById('btn-load-res').onclick = function() { document.getElementById('res-input').click(); };
+document.getElementById('btn-prev').onclick = function() { if (currentSceneIndex > 0) goToScene(currentSceneIndex - 1); };
+document.getElementById('btn-next').onclick = function() { if (project && currentSceneIndex < project.scenes.length - 1) goToScene(currentSceneIndex + 1); };
+document.getElementById('scene-select').onchange = function(e) { goToScene(parseInt(e.target.value)); };
+
+document.getElementById('btn-scenes').onclick = function() {
+  document.getElementById('scene-list').classList.toggle('visible');
+};
+
+document.getElementById('chk-polygons').onchange = function(e) { showPolygons = e.target.checked; render(); };
+document.getElementById('chk-labels').onchange = function(e) { showLabels = e.target.checked; render(); };
+document.getElementById('chk-fill').onchange = function(e) { fillPolygons = e.target.checked; render(); };
+
+// Fullscreen
+document.getElementById('btn-fullscreen').onclick = function() {
+  if (document.fullscreenElement) {
+    document.exitFullscreen();
+  } else {
+    document.documentElement.requestFullscreen();
+  }
+};
+document.addEventListener('fullscreenchange', function() {
+  document.body.classList.toggle('fullscreen', !!document.fullscreenElement);
+  setTimeout(resizeCanvas, 100);
+});
+
+// Drag & drop
+var dropArea = document.getElementById('drop-area');
+dropArea.onclick = function() { document.getElementById('file-input').click(); };
+
+['dragenter', 'dragover'].forEach(function(ev) {
+  document.body.addEventListener(ev, function(e) {
+    e.preventDefault();
+    dropArea.classList.add('dragover');
+  });
+});
+['dragleave', 'drop'].forEach(function(ev) {
+  document.body.addEventListener(ev, function(e) {
+    e.preventDefault();
+    dropArea.classList.remove('dragover');
+  });
+});
+document.body.addEventListener('drop', function(e) {
+  e.preventDefault();
+  var files = e.dataTransfer.files;
+  for (var i = 0; i < files.length; i++) {
+    if (files[i].name.toLowerCase().endsWith('.vnd')) {
+      var reader = new FileReader();
+      var file = files[i];
+      reader.onload = function(ev) { loadVNDFile(ev.target.result, file.name); };
+      reader.readAsArrayBuffer(file);
+    }
+  }
+});
+
+// Keyboard
+document.addEventListener('keydown', function(e) {
+  if (!project) return;
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+    if (currentSceneIndex > 0) goToScene(currentSceneIndex - 1);
+    e.preventDefault();
+  } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+    if (currentSceneIndex < project.scenes.length - 1) goToScene(currentSceneIndex + 1);
+    e.preventDefault();
+  } else if (e.key === 'f' || e.key === 'F') {
+    document.getElementById('btn-fullscreen').click();
+  } else if (e.key === 'p' || e.key === 'P') {
+    document.getElementById('chk-polygons').click();
+  } else if (e.key === 'l' || e.key === 'L') {
+    document.getElementById('chk-labels').click();
+  }
+});
+
+// Scroll horizontal pour scènes larges
+var isDragging = false;
+var dragStartX = 0;
+var dragStartScroll = 0;
+
+canvas.addEventListener('wheel', function(e) {
+  if (!project || currentSceneIndex < 0) return;
+  var scene = project.scenes[currentSceneIndex];
+  var sceneW = getSceneWidth(scene);
+  var gameW = project.header.width;
+  if (sceneW <= gameW) return;
+  e.preventDefault();
+  scrollX += e.deltaY || e.deltaX;
+  scrollX = Math.max(0, Math.min(scrollX, sceneW - gameW));
+  render();
+}, { passive: false });
+
+canvas.addEventListener('mousedown', function(e) {
+  if (!project || currentSceneIndex < 0) return;
+  var scene = project.scenes[currentSceneIndex];
+  if (getSceneWidth(scene) <= project.header.width) return;
+  if (e.button === 1 || e.shiftKey) { // middle-click ou shift+clic
+    isDragging = true;
+    dragStartX = e.clientX;
+    dragStartScroll = scrollX;
+    e.preventDefault();
+  }
+});
+
+window.addEventListener('mousemove', function(e) {
+  if (!isDragging) return;
+  var rect = canvas.getBoundingClientRect();
+  var gameW = project.header.width;
+  var scale = gameW / rect.width;
+  scrollX = dragStartScroll - (e.clientX - dragStartX) * scale;
+  var scene = project.scenes[currentSceneIndex];
+  scrollX = Math.max(0, Math.min(scrollX, getSceneWidth(scene) - gameW));
+  render();
+});
+
+window.addEventListener('mouseup', function() { isDragging = false; });
+
+// Touch pour mobile : scroll + tap + long-press
+var touchStartX = 0;
+var touchStartY = 0;
+var touchStartScroll = 0;
+var touchMoved = false;
+var longPressTimer = null;
+var longPressTriggered = false;
+
+canvas.addEventListener('touchstart', function(e) {
+  e.preventDefault();
+  if (!project || currentSceneIndex < 0) return;
+  touchStartX = e.touches[0].clientX;
+  touchStartY = e.touches[0].clientY;
+  touchStartScroll = scrollX;
+  touchMoved = false;
+  longPressTriggered = false;
+
+  // Long-press : afficher le texte rollover après 400ms
+  clearTimeout(longPressTimer);
+  var tx = e.touches[0].clientX, ty = e.touches[0].clientY;
+  longPressTimer = setTimeout(function() {
+    if (touchMoved) return;
+    longPressTriggered = true;
+    var pos = screenToGame(tx, ty);
+    var cmd = findCommandAtPoint(pos.x, pos.y);
+    if (cmd !== hoveredCmd) {
+      hoveredCmd = cmd;
+      render();
+    }
+  }, 400);
+}, { passive: false });
+
+canvas.addEventListener('touchmove', function(e) {
+  e.preventDefault();
+  if (!project || currentSceneIndex < 0) return;
+  var dx = Math.abs(e.touches[0].clientX - touchStartX);
+  var dy = Math.abs(e.touches[0].clientY - touchStartY);
+  if (dx > 8 || dy > 8) {
+    touchMoved = true;
+    clearTimeout(longPressTimer);
+  }
+  // Scroll horizontal
+  var scene = project.scenes[currentSceneIndex];
+  var sceneW = getSceneWidth(scene);
+  var gameW = project.header.width;
+  if (sceneW <= gameW) return;
+  var rect = canvas.getBoundingClientRect();
+  var scale = gameW / rect.width;
+  scrollX = touchStartScroll - (e.touches[0].clientX - touchStartX) * scale;
+  scrollX = Math.max(0, Math.min(scrollX, sceneW - gameW));
+  render();
+}, { passive: false });
+
+canvas.addEventListener('touchend', function(e) {
+  e.preventDefault();
+  clearTimeout(longPressTimer);
+
+  // Si long-press actif, juste masquer le hover
+  if (longPressTriggered) {
+    hoveredCmd = null;
+    render();
+    return;
+  }
+
+  if (touchMoved || !project || currentSceneIndex < 0) return;
+  // Tap = clic
+  var touch = e.changedTouches[0];
+  var pos = screenToGame(touch.clientX, touch.clientY);
+  var cmd = findClickableCommandAtPoint(pos.x, pos.y);
+  if (!cmd) return;
+  handleCommandClick(cmd);
+}, { passive: false });
+
+// Initial resize
+resizeCanvas();
+</script>
+</body>
+</html>
